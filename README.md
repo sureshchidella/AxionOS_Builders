@@ -1,139 +1,93 @@
-# AxionOS Build System 🚀
+# Configurable Android ROM Builder
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg?style=for-the-badge&logo=python&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)
-![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20Linux-orange.svg?style=for-the-badge&logo=linux&logoColor=white)
+This repository runs Android ROM builds on a self-hosted GitHub Actions runner and reports their progress through the optional Telegram bot. It is ROM-agnostic: ROM source details, device manifests, build commands and artifact locations are version-controlled configuration instead of being hard-coded for AxionOS.
 
-A high-performance CI/CD pipeline for building AxionOS and other Android ROMs. This system bridges GitHub Actions with a Telegram bot interface, allowing for remote-controlled build management, surgical artifact detection, and real-time monitoring.
+## Configure a ROM source
 
----
+Add a source to [config/sources.json](config/sources.json). A source defines the manifest repository and branch, the command used to compile a device, default build flags, optional post-sync setup, and where the completed ZIP is expected. Commands support `{device}`, `{build_type}`, `{variant}`, and `{build_flags}` placeholders.
 
-## 📂 Repository Structure
-
-### 🏗️ `builder/`
-Contains the core build logic executed on the self-hosted runner.
-*   **`build.sh` / `sync.sh`**: Core AOSP sync and compilation scripts. Now includes a robust blocking loop to ensure the ROM ZIP is ready before finalizing.
-*   **`tmux_runner.sh`**: Orchestrates the build within a persistent `tmux` session. Uses `pipe-pane` for high-performance, real-time log streaming with zero CPU overhead.
-*   **`reporter.py`**: Background monitoring tool. Uses surgical log parsing (`Package Complete:`) to identify artifacts with 100% accuracy.
-*   **`utils/telegram.py`**: Shared utility for Telegram API interactions.
-
-### 🤖 `telegram-bot/`
-The control center for the entire system.
-*   **`main.py`**: Entry point for the Telegram bot. Now includes structured logging with a clean terminal interface.
-*   **`handlers/`**: Modularized command logic.
-    *   `github.py`: Build triggers, automatic manifest discovery, and queue management.
-    *   `admin.py`: User management, chat authorization, channel redirection, and broadcast tools.
-*   **`utils.py`**: Helper functions for bot operations and Redis interactions.
-
----
-
-## 🚀 Key Features
-
-*   **Smart Manifest Discovery**: Just run `/build <codename>`. The bot automatically pulls the manifest from the `AxionAOSP/device_manifests` repository.
-*   **Automated CDN Uploads**: Optional high-speed R2 mirroring for ROM ZIPs directly from the build menu.
-*   **Dynamic Upload Streams**: Toggle between Gofile and Pixeldrain as your main free upload stream with the `/usepd` command, complete with automatic fallback logic.
-*   **Zero-Overhead Monitoring**: Real-time progress bars and log summaries streamed via high-performance I/O.
-*   **Channel Redirection**: Redirect build notifications and artifact reports to a dedicated Telegram channel.
-*   **Surgical Artifact Detection**: Extracts the exact output path from build logs to ensure the correct files are uploaded every time.
-*   **Broadcast System**: Owner-only `/announce` command to communicate with all maintainers across all approved groups and channels.
-*   **Dynamic Authorization**: Easily approve or disapprove groups by ID or directly within the chat.
-
----
-
-## 🤖 Bot Commands
-
-To view all available commands, their usage guidelines, and detailed administrative options, simply run the **`/help`** command inside an authorized Telegram group, or interact with the bot's dynamic commands menu directly in your chat interface.
-
----
-
-## 📸 Preview
-
-### Build Setup Menu
-The `/build` command triggers an interactive menu to customize your build:
-*   **Type**: Toggle build type (`user`, `userdebug`, `eng`).
-*   **GMS**: Choose variant (`GMS`, `PICO`, `CORE`, `VANILLA`).
-*   **Clean**: Toggle `mka clean` before building (Full Clean).
-*   **Release Build**: Toggle automated Cloudflare R2 CDN mirroring for the ROM ZIP on success (creates premium high-speed release download links).
-*   **Target**: Dynamically redirects to your main channel if configured.
-
-### Artifact Delivery
-Once a build is complete, you get a premium delivery card:
-*   **💿 DOWNLOAD ROM ZIP**: Primary artifact link (points to Gofile/Pixeldrain in regular builds).
-*   **🚀 CDN MIRROR**: Premium, high-speed release download link (available if the **"Release Build"** toggle was enabled).
-*   **📦 TARGET FILES**: The generated `target_files.zip` (available only when **"Release Build"** is enabled). To save premium Cloudflare R2 storage, this developer-only asset (used to compile future **incremental OTA packages**) is uploaded to the free storage stream (Gofile/Pixeldrain), keeping your CDN exclusively reserved for user-facing ROM downloads.
-*   **📥 IMAGE ARTIFACTS**: Boot, Recovery, and Vendor images grouped for a clean, cohesive user interface.
-*   **📄 OTA JSON**: Direct link to the generated release metadata.
-
----
-
-## ⚙️ Setup & Configuration
-
-This system utilizes a **dual-configuration model** to maintain security and portability:
-1. **Local Server Config (`private.env`)**: Governs the local Telegram Bot service running on your server.
-2. **GitHub Repository Secrets**: Injected securely into the GitHub Actions runner pipeline during active builds.
-
-### 1. Local Server Config (`telegram-bot/private.env`)
-To run the local Telegram bot on your server, copy the template and configure your variables:
-```bash
-cp private.env.example telegram-bot/private.env
-nano telegram-bot/private.env
+```json
+"my-rom": {
+  "manifest_url": "https://github.com/example/android.git",
+  "manifest_branch": "android-16.0",
+  "build_flags": "-j32",
+  "build_command": ". build/envsetup.sh && lunch myrom_{device}-{build_type} && mka bacon {build_flags}",
+  "artifact_globs": ["out/target/product/{device}/*.zip"]
+}
 ```
 
-Ensure the following variables are defined (see `private.env.example` for details):
-*   `BOT_TOKEN`: Your Telegram Bot Token (from @BotFather).
-*   `CHANNEL_ID`: Chat ID where build updates are sent.
-*   `TOPIC_BUILDER`: Thread ID (if using a Forum group).
-*   `OWNER_ID`: Your personal Telegram User ID.
-*   `GITHUB_TOKEN`: GitHub Personal Access Token (PAT) with `repo` scope.
-*   `GITHUB_REPO_NAME`: Your GitHub Repository (e.g., `Owner/RepoName`).
-*   `GITHUB_BRANCH`: Active branch (e.g., `actions`).
-*   `REDIS_URL`: Redis connection string (e.g., `redis://localhost:6379/4`).
-*   `ALLOWED_CHAT_IDS`: List of permitted Group IDs.
-*   `ADMIN_USER_IDS`: List of authorized Admin User IDs.
-*   `PD_API_KEY`: Optional Pixeldrain API Key.
+Default flags are version-controlled with the source. A requester may additionally supply argument-only flags through GitHub Actions' `EXTRA_BUILD_FLAGS` input or `/build <source> <device> [flags]`; shell operators, quotes and command substitutions are rejected. Put `{build_flags}` at the command location where those flags should be applied. Commands themselves remain version-controlled rather than accepted from Telegram or workflow input.
 
----
+`sample_build_flags` is documentation-only and can be used to show maintainers valid flags for a source without enabling them by default. The included source lists `-j32` and `TARGET_BUILD_APPS=Settings` as examples.
 
-### 2. GitHub Repository Secrets (Set on GitHub.com)
-The build pipeline runner executes on GitHub's ecosystem. You **must NOT** save any CDN or build notification secrets in your local `private.env` file. Instead, configure them as **Repository Secrets** on your GitHub repository (under `Settings -> Secrets and variables -> Actions`):
+## Signing keys
 
-#### 🏗️ Builder Pipeline Secrets:
-*   `GH_PAT`: GitHub Personal Access Token (same as `GITHUB_TOKEN` above).
-*   `TELEGRAM_TOKEN`: Bot Token (same as `BOT_TOKEN` above).
-*   `TELEGRAM_CHAT_ID`: Notification group ID (same as `CHANNEL_ID` above).
-*   `TOPIC_BUILDER`: Thread ID (same as `TOPIC_BUILDER` above).
-*   `TOPIC_ERROR_LOGS`: Thread ID dedicated to posting compile error logs.
-*   `TOPIC_RELEASE_JSON`: Thread ID dedicated to posting OTA release JSON artifacts.
+Each source can define an optional `signing` recipe. Choose **Generate signing keys** in GitHub Actions, or toggle it in the Telegram build menu (admin/owner only). Existing key directories are never overwritten.
 
-#### ☁️ Cloudflare R2 CDN Secrets (Optional - for Success Mirroring):
-*   `R2_ACCESS_KEY`: Cloudflare R2 Access Key ID.
-*   `R2_SECRET_KEY`: Cloudflare R2 Secret Access Key.
-*   `R2_ACCOUNT_ID`: Cloudflare R2 Account ID.
-*   `R2_BUCKET`: Target R2 bucket name (e.g., `axionos-releases`).
-*   `R2_CDN_DOMAIN`: Custom CDN domain mapped to your bucket (e.g., `https://cdn.axionos.org`).
+Most Lineage-style ROMs use the built-in template mode, which performs the equivalent of `mkdir -p vendor/lineage-priv`, copies `lineage/scripts/lineage-priv-template` to `vendor/lineage-priv/keys`, and runs `./keys.sh` there:
 
----
+```json
+"signing": {
+  "mode": "lineage-template",
+  "template_path": "lineage/scripts/lineage-priv-template",
+  "keys_path": "vendor/lineage-priv/keys"
+}
+```
 
-## 🛠️ Prerequisites
+For ROMs with a different signing layout, including Infinity-style trees, use `script` mode. Commands are source configuration reviewed in Git and run after syncing the tree:
 
-Install all required system and builder dependencies:
+```json
+"signing": {
+  "mode": "script",
+  "working_directory": ".",
+  "commands": [
+    "mkdir -p vendor/infinity-priv/keys",
+    "./vendor/infinity-priv/keys/generate-keys.sh"
+  ]
+}
+```
+
+Set `"mode": "none"` (or omit `signing`) for ROMs that do not generate keys this way.
+
+## Configure a device
+
+Create [config/devices/example.json](config/devices/example.json) as `config/devices/<codename>.json` and point `local_manifest_url` to the device manifest containing the device, vendor, kernel and common-tree projects.
+
+```json
+{
+  "name": "My phone",
+  "local_manifest_url": "https://raw.githubusercontent.com/my-org/manifests/main/mydevice.xml"
+}
+```
+
+## Start a build
+
+In GitHub Actions, run **Configurable ROM Builder** and supply:
+
+- `ROM_SOURCE`: the key in `config/sources.json`.
+- `DEVICE`: the device configuration filename without `.json`.
+- The normal build type, clean and upload options.
+
+With Telegram enabled, run:
+
+```
+/build <rom-source> <device> [build flags]
+```
+
+For example, `/build lineage example -j32`. The bot lets the requester select the remaining build options, then GitHub Actions resolves the source and device configuration from the checked-out revision. `/validate <manifest-url>` remains available to validate a local manifest before adding it to the device configuration.
+
+## Runner requirements
+
+The self-hosted Linux runner needs Android's `repo` tool, `git`, `git-lfs`, `tmux`, Python 3 and all build dependencies required by the chosen ROM. The workflow uses `$HOME/android/source` as the persistent source checkout; it requires enough disk space for that tree and its build output.
+
+Install the Python dependencies for the bot/reporter with:
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+Copy `private.env.example` to `telegram-bot/private.env` when using the Telegram bot. Add the corresponding Actions secrets (`GH_PAT`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` and optional R2 credentials) in the repository settings.
 
-## 🖥️ Monitoring & Debugging
+## Operational notes
 
-### Live Logs
-The bot saves structured logs to `telegram-bot/bot.log` while maintaining a clean, human-readable terminal output. Monitor them in real-time:
-```bash
-tail -f telegram-bot/bot.log
-```
-
-### Persistent Console
-Monitor the raw build environment from the server:
-```bash
-TMUX= tmux attach -t axion_build
-```
+The workflow is designed for a self-hosted runner because a full Android checkout and build exceeds the practical limits of standard hosted runners. Build logs are streamed with tmux, successful artifact paths are detected from the configured glob, and the reporter can upload ROM ZIPs, images and optional R2 mirrors.

@@ -25,14 +25,16 @@ BUILD_OPTIONS = {
     'RELEASETYPE': ['user', 'userdebug', 'eng'],
     'GMS_VARIANT': ['GMS', 'PICO', 'CORE', 'VANILLA'],
     'FULLCLEAN': ['No', 'Yes'],
+    'GENERATE_KEYS': ['No', 'Yes'],
     'UPLOAD_CDN': ['No', 'Yes']
 }
 
 def get_build_menu_keyboard(params):
     def btn(l, k): return InlineKeyboardButton(f"{l}: {params[k]}", callback_data=f"build_set:{k}")
     return InlineKeyboardMarkup([
-        [btn("Type", "RELEASETYPE"), btn("Variant", "GMS_VARIANT")],
-        [btn("Full Clean", "FULLCLEAN"), btn("Release Build", "UPLOAD_CDN")],
+        [btn("Type", "RELEASETYPE"), btn("Build variant", "GMS_VARIANT")],
+        [btn("Full Clean", "FULLCLEAN"), btn("Generate keys", "GENERATE_KEYS")],
+        [btn("Release Build", "UPLOAD_CDN")],
         [InlineKeyboardButton("✅ START", callback_data="build_action:start"), InlineKeyboardButton("❌ CANCEL", callback_data="build_action:cancel")]
     ])
 
@@ -255,8 +257,8 @@ async def build_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⛔ **Access Denied.**\nPrivate builds are restricted to Admins.")
             return
 
-    if not context.args:
-        await update.message.reply_text("⚠️ Usage: `/build <device> [manifest_url]`")
+    if len(context.args) < 2:
+        await update.message.reply_text("⚠️ Usage: `/build <rom-source> <device> [build flags]`\nExample: `/build lineage example -j32`")
         return
 
     # Check if runner is online
@@ -272,28 +274,12 @@ async def build_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("runner is offline")
         return
 
-    dev = context.args[0]
-    url = convert_to_raw_url(context.args[1]) if len(context.args) >= 2 else f"https://github.com/AxionAOSP/device_manifests/raw/main/{dev}.xml"
-    status_msg = await update.message.reply_text(f"🔎 Validating Manifest...")
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url, timeout=10, follow_redirects=True)
-            if resp.status_code != 200:
-                await status_msg.edit_text("❌ **Manifest Not Found.**", parse_mode="Markdown")
-                return
-            root = ET.fromstring(resp.content)
-            if root.tag != "manifest":
-                await status_msg.edit_text("❌ **Invalid Manifest XML.**", parse_mode="Markdown")
-                return
-        except Exception as e:
-            await status_msg.edit_text(f"❌ **Validation Failed:** `{e}`", parse_mode="Markdown")
-            return
-
-    await status_msg.delete()
+    rom_source, dev = context.args[0], context.args[1]
+    extra_build_flags = " ".join(context.args[2:])
     params = {
         'DEVICE': dev, 'RELEASETYPE': 'userdebug', 'GMS_VARIANT': 'GMS',
-        'FULLCLEAN': 'No', 'UPLOAD_CDN': 'No', 'LOCAL_MANIFEST_URL': url,
+        'ROM_SOURCE': rom_source, 'EXTRA_BUILD_FLAGS': extra_build_flags,
+        'FULLCLEAN': 'No', 'GENERATE_KEYS': 'No', 'UPLOAD_CDN': 'No',
         'BUILD_USER': update.effective_user.username or update.effective_user.first_name,
         'BUILD_USER_ID': str(update.effective_user.id),
         'CHAT_ID': str(update.effective_chat.id),
@@ -301,8 +287,10 @@ async def build_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     context.user_data['pending_build'] = params
     msg = (
-        f"<b>🚀 AXIONOS BUILD</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>🚀 ROM BUILD</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>🧬 ROM</b>    : <code>{html.escape(rom_source)}</code>\n"
         f"<b>📱 Device</b> : <code>{dev}</code>\n"
+        f"<b>⚙️ Flags</b>  : <code>{html.escape(extra_build_flags or 'none')}</code>\n"
         f"<b>👤 User</b>   : @{html.escape(params['BUILD_USER'])}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n<i>Adjust config:</i>"
     )
@@ -331,8 +319,8 @@ async def handle_github_callbacks(update: Update, context: ContextTypes.DEFAULT_
             # Security Check: Prevent non-admins from triggering Full Clean
             user_data = await get_user_data(query.from_user.id)
             role = user_data.get("role") if user_data else ROLE_USER
-            if p.get('FULLCLEAN') == 'Yes' and role not in [ROLE_ADMIN, ROLE_OWNER]:
-                await query.answer("⛔ Security Alert: Full Clean restricted to Admins.", show_alert=True)
+            if (p.get('FULLCLEAN') == 'Yes' or p.get('GENERATE_KEYS') == 'Yes') and role not in [ROLE_ADMIN, ROLE_OWNER]:
+                await query.answer("⛔ Full clean and key generation are restricted to Admins.", show_alert=True)
                 return
 
             r = await get_redis()

@@ -105,9 +105,11 @@ async def list_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 @restricted_command
 async def guide_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "📚 **AxionOS Guide**\n\n"
+        "📚 **ROM Builder Guide**\n\n"
         "🟢 **Starting**\n"
-        "├ `/build <device> <manifest>`\n"
+        "├ `/build <rom-source> <device> [build flags]`\n"
+        "├ Source keys are managed in `config/sources.json`\n"
+        "├ Device manifests are managed in `config/devices/<device>.json`\n"
         "├ **Groups**: Anyone can build!\n"
         "└ **PM**: Restricted to Admins.\n\n"
         "📊 **Monitoring**\n"
@@ -115,17 +117,18 @@ async def guide_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "├ `/queue`: GitHub runs\n"
         "└ `/cancel <ID>`: Stop your build.\n\n"
         "⚙️ **Options**\n"
-        "├ **GMS Variant**: `GMS`, `PICO`, `CORE`, `VANILLA`\n"
+        "├ **Build Variant**: Source-specific value available to the configured command\n"
         "├ **Clean**: `Full Clean` (`make clean` before compile)\n"
+        "├ **Generate keys**: Creates missing signing keys using the source recipe (Admin only)\n"
         "└ **Release Build**: Toggles high-speed Cloudflare R2 CDN Mirroring\n\n"
-        "📄 **Local Manifest**\n"
-        "└ [Reference Template](https://github.com/AxionAOSP/device_manifests/blob/main/begonia.xml)"
+        "📄 **Build commands**\n"
+        "└ Each source's manifest, branch, command, default flags and artifact globs live in `config/sources.json`."
     )
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
 @restricted_command
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 **Welcome to AxionOS Build Bot!**\nUse `/help` for commands.", parse_mode="Markdown")
+    await update.message.reply_text("👋 **Welcome to the ROM Build Bot!**\nUse `/help` for commands.", parse_mode="Markdown")
 
 @restricted_command
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,9 +139,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = is_owner or (role == ROLE_ADMIN) or (uid in ADMIN_USER_IDS)
 
     help_text = (
-        "🤖 **AxionOS Bot Help**\n\n"
+        "🤖 **ROM Builder Help**\n\n"
         "**👤 User Commands:**\n"
-        "`/build <device> [url]` - Start build.\n"
+        "`/build <rom-source> <device> [flags]` - Start a configured build.\n"
         "`/validate <url>` - Validate local manifest repos.\n"
         "`/status [device]` - Live progress.\n"
         "`/queue` - GitHub queue.\n"

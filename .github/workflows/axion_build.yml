@@ -1,13 +1,29 @@
-name: AxionOS Builder
-run-name: '${{ inputs.DEVICE }} (${{ inputs.RELEASETYPE }}) | User: ${{ inputs.BUILD_USER }} (${{ inputs.BUILD_USER_ID }})'
+name: Configurable ROM Builder
+run-name: '${{ inputs.ROM_SOURCE }} / ${{ inputs.DEVICE }} (${{ inputs.RELEASETYPE }}) | User: ${{ inputs.BUILD_USER }} (${{ inputs.BUILD_USER_ID }})'
 
 on:
   workflow_dispatch:
     inputs:
+      ROM_SOURCE:
+        description: 'Source key from config/sources.json (e.g., lineage)'
+        required: true
+        default: 'lineage'
       DEVICE:
         description: 'Device Codename (e.g., walleye)'
         required: true
         default: 'walleye'
+      EXTRA_BUILD_FLAGS:
+        description: 'Optional safe build arguments, e.g. -j32 (appended at {build_flags})'
+        required: false
+        default: ''
+      GENERATE_KEYS:
+        description: 'Generate missing signing keys using the source signing recipe?'
+        required: true
+        default: 'No'
+        type: choice
+        options:
+          - 'No'
+          - 'Yes'
       RELEASETYPE:
         description: 'Build Release Type'
         required: true
@@ -26,7 +42,7 @@ on:
           - 'No'
           - 'Yes'
       GMS_VARIANT:
-        description: 'GMS Variant'
+        description: 'Source build variant (available as {variant} in the configured build command)'
         required: true
         default: 'GMS'
         type: choice
@@ -36,17 +52,13 @@ on:
           - 'CORE'
           - 'VANILLA'
       UPLOAD_CDN:
-        description: 'Upload to AxionOS CDN (R2)?'
+        description: 'Upload to the configured R2 CDN?'
         required: true
         default: 'No'
         type: choice
         options:
           - 'No'
           - 'Yes'
-      LOCAL_MANIFEST_URL:
-        description: 'URL to local_manifest.xml'
-        required: false
-        default: ''
       BUILD_USER:
         description: 'Triggered By (Username)'
         required: true
@@ -72,11 +84,13 @@ jobs:
     env:
 
       DEVICE: ${{ inputs.DEVICE }}
+      ROM_SOURCE: ${{ inputs.ROM_SOURCE }}
+      EXTRA_BUILD_FLAGS: ${{ inputs.EXTRA_BUILD_FLAGS }}
+      GENERATE_KEYS: ${{ inputs.GENERATE_KEYS }}
       RELEASETYPE: ${{ inputs.RELEASETYPE }}
       FULLCLEAN: ${{ inputs.FULLCLEAN }}
       UPLOAD_CDN: ${{ inputs.UPLOAD_CDN }}
       GMS_VARIANT: ${{ inputs.GMS_VARIANT }}
-      LOCAL_MANIFEST: ${{ inputs.LOCAL_MANIFEST_URL }}
       BUILD_USER: ${{ inputs.BUILD_USER }}
       BUILD_USER_ID: ${{ inputs.BUILD_USER_ID }}
 
@@ -92,9 +106,6 @@ jobs:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
       R2_CDN_DOMAIN: ${{ secrets.R2_CDN_DOMAIN }}
-
-      AOSP_MANIFEST_URL: 'https://github.com/AxionAOSP/android.git'
-      AOSP_MANIFEST_BRANCH: 'lineage-23.2'
 
       GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       GITHUB_REPO_NAME: ${{ github.repository }}
@@ -116,6 +127,16 @@ jobs:
       - name: Setup Environment
         run: |
           echo "AOSP_SOURCE_DIR=$HOME/android/source" >> $GITHUB_ENV
+
+      - name: Resolve ROM and device configuration
+        run: |
+          python3 builder/resolve_config.py \
+            --source "$ROM_SOURCE" \
+            --device "$DEVICE" \
+            --build-type "$RELEASETYPE" \
+            --variant "$GMS_VARIANT" \
+            --extra-build-flags "$EXTRA_BUILD_FLAGS" \
+            --github-env "$GITHUB_ENV"
 
       - name: Prepare Scripts
         run: |
@@ -170,12 +191,19 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          SYNC_CMD="export AOSP_MANIFEST_URL=\"$AOSP_MANIFEST_URL\"; export AOSP_MANIFEST_BRANCH=\"$AOSP_MANIFEST_BRANCH\"; cd $AOSP_SOURCE_DIR && ${{ github.workspace }}/builder/sync.sh \"$LOCAL_MANIFEST\""
+          SYNC_CMD="cd $AOSP_SOURCE_DIR && ${{ github.workspace }}/builder/sync.sh \"$LOCAL_MANIFEST_URL\""
 
           ${{ github.workspace }}/builder/tmux_runner.sh \
             "axion_build" \
             "$SYNC_CMD" \
             "${{ github.workspace }}/sync.log"
+
+      - name: Generate signing keys
+        if: inputs.GENERATE_KEYS == 'Yes'
+        run: |
+          python3 builder/generate_keys.py \
+            --source "$ROM_SOURCE" \
+            --source-dir "$AOSP_SOURCE_DIR"
 
       - name: Build ROM
         id: build_rom
@@ -199,7 +227,7 @@ jobs:
             --source-dir "$AOSP_SOURCE_DIR" &
           MONITOR_PID=$!
 
-          BUILD_CMD="export GMS_VARIANT=\"$GMS_VARIANT\"; cd $AOSP_SOURCE_DIR && ${{ github.workspace }}/builder/build.sh \"$DEVICE\" \"$RELEASETYPE\" \"$FULLCLEAN\""
+          BUILD_CMD="cd $AOSP_SOURCE_DIR && ${{ github.workspace }}/builder/build.sh \"$DEVICE\" \"$FULLCLEAN\""
 
           if ${{ github.workspace }}/builder/tmux_runner.sh \
             "axion_build" \

@@ -304,8 +304,11 @@ def main():
         build_log = os.path.join(workspace, "build.log")
         if os.path.exists(build_log):
             for line in reversed(open(build_log).readlines()):
-                if "Package Complete:" in line:
-                    path = line.split("Package Complete:")[-1].strip()
+                # ROM_ZIP is emitted by the generic builder. Package Complete
+                # remains for compatibility with existing Axion-style logs.
+                marker = "ROM_ZIP:" if "ROM_ZIP:" in line else "Package Complete:" if "Package Complete:" in line else None
+                if marker:
+                    path = line.split(marker, 1)[1].strip()
                     if os.path.exists(path): rom_file = path
                     elif os.path.exists(os.path.join(args.source_dir, path)): rom_file = os.path.join(args.source_dir, path)
                     if rom_file: break

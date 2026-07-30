@@ -1,51 +1,31 @@
-#!/bin/bash
-DEVICE="$1"
-RELEASETYPE="$2"
-FULLCLEAN="$3"
+#!/usr/bin/env bash
+set -euo pipefail
 
-case "$GMS_VARIANT" in
-    "GMS") AXION_VARIANT="gms" ;;
-    "PICO") AXION_VARIANT="pico" ;;
-    "CORE") AXION_VARIANT="core" ;;
-    "VANILLA") AXION_VARIANT="va" ;;
-    *) AXION_VARIANT="" ;;
-esac
+DEVICE="${1:?device is required}"
+FULL_CLEAN="${2:-No}"
 
-echo "Building $DEVICE ($GMS_VARIANT -> $AXION_VARIANT)..."
-. build/envsetup.sh || exit 1
-
-KEY_BACKUP_DIR="$HOME/android_keys"
-if [ -d "$KEY_BACKUP_DIR" ] && [ "$(ls -A "$KEY_BACKUP_DIR" 2>/dev/null)" ]; then
-    echo "🔑 Ensuring keys are restored to vendor/lineage-priv/keys..."
-    mkdir -p "vendor/lineage-priv/keys"
-    cp -r "$KEY_BACKUP_DIR/"* "vendor/lineage-priv/keys/"
+if [[ "$FULL_CLEAN" == "Yes" ]]; then
+    echo "Cleaning out/"
+    rm -rf out
 fi
 
-if [ "$FULLCLEAN" == "Yes" ]; then
-    echo "Cleaning out/..."
-    rm -rf out || exit 1
-fi
+: "${BUILD_COMMAND:?BUILD_COMMAND is required}"
+echo "Building $DEVICE with the configured ROM command"
 
-axion "$DEVICE" $AXION_VARIANT || exit 1
-ax -br || exit 1
+# BUILD_COMMAND comes only from the version-controlled source catalog.  The
+# resolver substitutes the documented placeholders before this point.
+bash -lc "$BUILD_COMMAND"
 
-echo "Waiting for ZIP in out/target/product/$DEVICE..."
-for i in {1..1200}; do
-    ROM_ZIP=$(find "out/target/product/$DEVICE" -maxdepth 1 -name "*.zip" -size +500M | head -n 1)
-    if [ -n "$ROM_ZIP" ]; then
-        echo "✅ ZIP: $ROM_ZIP"
-        sleep 10
-        break
-    fi
-    if ! pgrep -u $(whoami) -f "soong_ui|ninja" > /dev/null && [ $i -gt 10 ]; then
-         echo "❌ Stopped. No ZIP."
-         exit 1
-    fi
-    [ $((i % 10)) -eq 0 ] && echo "[$(date +%H:%M:%S)] Building..."
-    sleep 30
+DEFAULT_ARTIFACT_GLOB='out/target/product/{device}/*.zip'
+IFS=':' read -r -a artifact_globs <<< "${ARTIFACT_GLOBS:-$DEFAULT_ARTIFACT_GLOB}"
+for pattern in "${artifact_globs[@]}"; do
+    pattern="$(printf '%s' "$pattern" | sed "s/{device}/$DEVICE/g")"
+    while IFS= read -r artifact; do
+        [[ -n "$artifact" ]] || continue
+        echo "ROM_ZIP: $artifact"
+        exit 0
+    done < <(compgen -G "$pattern" || true)
 done
 
-if ! find "out/target/product/$DEVICE" -maxdepth 1 -name "*.zip" -size +500M | grep -q "."; then
-    echo "❌ Timeout."
-    exit 1
-fi
+echo "Build finished but no configured artifact was found." >&2
+exit 1
