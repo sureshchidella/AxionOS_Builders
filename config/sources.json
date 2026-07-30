@@ -1,0 +1,23 @@
+{
+  "sources": {
+    "lineage": {
+      "display_name": "Lunaris-AOSP",
+      "manifest_url": "https://github.com/Lunaris-AOSP/android.git",
+      "manifest_branch": "16.2",
+      "build_flags": "",
+      "sample_build_flags": [
+        "-j32",
+        "TARGET_BUILD_APPS=Settings"
+      ],
+      "build_command": ". build/envsetup.sh && breakfast lineage_{device}-{build_type} && mka bacon {build_flags}",
+      "signing": {
+        "mode": "lineage-template",
+        "template_path": "lineage/scripts/lineage-priv-template",
+        "keys_path": "vendor/lineage-priv/keys"
+      },
+      "artifact_globs": [
+        "out/target/product/{device}/*.zip"
+      ]
+    }
+  }
+}

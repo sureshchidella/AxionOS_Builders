@@ -1,0 +1,4 @@
+{
+  "name": "Example device",
+  "local_manifest_url": "https://raw.githubusercontent.com/your-org/android_device_manifests/main/example.xml"
+}
