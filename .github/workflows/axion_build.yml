@@ -94,11 +94,18 @@ jobs:
       BUILD_USER: ${{ inputs.BUILD_USER }}
       BUILD_USER_ID: ${{ inputs.BUILD_USER_ID }}
 
+      # Secrets are injected by GitHub only for this job. They are never read
+      # through the GitHub API and must not be printed by workflow steps.
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ (inputs.CHAT_ID != 'none' && inputs.CHAT_ID) || secrets.TELEGRAM_CHAT_ID }}
-      TOPIC_BUILDER: ${{ (inputs.TOPIC_ID != 'none' && inputs.TOPIC_ID) || secrets.TOPIC_BUILDER }}
-      TOPIC_ERROR_LOGS: ${{ (inputs.TOPIC_ID != 'none' && secrets.TOPIC_ERROR_LOGS) || 'none' }}
-      TOPIC_RELEASE_JSON: ${{ (inputs.TOPIC_ID != 'none' && secrets.TOPIC_RELEASE_JSON) || 'none' }}
+      TELEGRAM_CHAT_ID: ${{ (inputs.CHAT_ID != '' && inputs.CHAT_ID != 'none' && inputs.CHAT_ID) || secrets.TELEGRAM_CHAT_ID }}
+      TOPIC_BUILDER: ${{ (inputs.TOPIC_ID != '' && inputs.TOPIC_ID != 'none' && inputs.TOPIC_ID) || secrets.TOPIC_BUILDER }}
+      TOPIC_ERROR_LOGS: ${{ secrets.TOPIC_ERROR_LOGS || 'none' }}
+      TOPIC_RELEASE_JSON: ${{ secrets.TOPIC_RELEASE_JSON || 'none' }}
+
+      # Aliases let workflow-run tools use the same names as the local bot
+      # configuration where applicable.
+      BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      CHANNEL_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       # R2 Credentials
       R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
@@ -106,8 +113,12 @@ jobs:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
       R2_CDN_DOMAIN: ${{ secrets.R2_CDN_DOMAIN }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      PD_API_KEY: ${{ secrets.PD_API_KEY }}
 
-      GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      # A GH_PAT is needed only when the job must write repository contents.
+      # Otherwise the built-in, short-lived token is used.
+      GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
       GITHUB_REPO_NAME: ${{ github.repository }}
       GIT_CONFIG_GLOBAL: ${{ github.workspace }}/.gitconfig_temp
 
@@ -122,7 +133,7 @@ jobs:
       - name: Checkout Repo (Scripts)
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: Setup Environment
         run: |

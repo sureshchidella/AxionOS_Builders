@@ -86,7 +86,9 @@ Install the Python dependencies for the bot/reporter with:
 pip install -r requirements.txt
 ```
 
-Copy `private.env.example` to `telegram-bot/private.env` when using the Telegram bot. Add the corresponding Actions secrets (`GH_PAT`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` and optional R2 credentials) in the repository settings.
+Copy `private.env.example` to `telegram-bot/private.env` when using the Telegram bot. Add the corresponding Actions secrets in **Settings → Secrets and variables → Actions**: `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`, optional `TOPIC_BUILDER`, `TOPIC_ERROR_LOGS`, `TOPIC_RELEASE_JSON`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_CDN_DOMAIN`, `REDIS_URL`, and `PD_API_KEY`. Add `GH_PAT` only if the workflow needs to write repository contents; otherwise it uses GitHub's built-in job token.
+
+GitHub does not expose repository-secret values through its API. They are injected only while an Actions job runs, and the workflow maps them to the environment variables consumed by the build reporter. The separately hosted Telegram bot cannot read Actions secrets, so it still needs `telegram-bot/private.env` (or equivalent service environment variables).
 
 ## Operational notes
 
